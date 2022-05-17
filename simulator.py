@@ -1,10 +1,14 @@
+import enum
 from os import closerange
 import sys
+# from numpy.core.fromnumeric import argmax
 import yaml
 import json
 import openpyxl
 import itertools
 from matplotlib import pyplot as plt
+from tqdm import tqdm
+import numpy as np
 
 
 # アシスト、防護力の値、ルーンのパターン保持し、DPSを計算するclass
@@ -43,7 +47,7 @@ class PATTERN:
         x = 1.05
         if self.seven:
             x = 1.07
-        return 0.33000 * x
+        return 0.33650 * x
 
     def get_rune_zokusei(self):
         # zokuseiは30.000固定
@@ -115,24 +119,33 @@ class UNIT:
         # 特攻かどうかのフラグ
         self.SPECIAL = argument["flagspecial"]
         # ユニットガッツ(出撃時28なので28で初期化)
+        # いまのあれが12なので12で初期化
         self.GUTS = 28
         # ユニットアシスト(耐久指数で変化するので0で初期化)
         self.ASSIST = 0
         # ルーン枠の数
         self.LIM_RUNE = argument["rearity"] + 1
+        self.REARITY = argument["rearity"]
         # リーチ(上位ルーンの装備が出来るのかどうなのか)
         self.can_zyoui = argument["can_zyoui"]
         # 名前と武器種類
         self.name = argument["name"]
         self.weapon = argument["weapon"]
         self.HP = argument["hp"]
+        self.reach = argument["reach"]
 
 
     # 救援のアシスト、ルーン、防護力のパターン生成場所 
     def create_pattern(self):
         # アシスト、2パターン
         assists = [["135","yuri","yuri"],["135","zoka","zoka"]]
-        unitBs = [0.03, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        # unitBs = [0.03, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        unitBs = [0.03]
+        unitBs_start = 0.5
+        unitBs_step = 0.25
+        unitBs_end = 13.0
+        for i in range(int((unitBs_end-unitBs_start)/unitBs_step)):
+            unitBs.append(unitBs_start+i*unitBs_step)
         runes = ["zokusei","guts","rife","guard",""]
         runes_a = ["zokusei","guts","rife","guard","arch"]
         ret = []
@@ -172,7 +185,7 @@ class UNIT:
         # ライフ ガードがある場合は魔力値を設定してあげないといけない
         if pt.is_get_rune_rife():
             rife_M = 0.15001
-            for x in range(24):
+            for x in range(25):
                 rife_M = 0.15001 + x * 0.005
                 cuest_HP = HPS(self.HP, pt.get_guts(), 0, pt.get_unitB(), rife_M, 0)
                 # 5%以上耐えられるようになったら終わり
@@ -184,7 +197,7 @@ class UNIT:
         # ガードでも同じことをする
         if pt.is_get_rune_guard():
             guard_M = 0.15001
-            for x in range(24):
+            for x in range(25):
                 guard_M = 0.15001 + x * 0.005
                 cuest_HP = HPS(self.HP, pt.get_guts(), 0, pt.get_unitB(), pt.get_rune_rife(), guard_M)
                 # 5%以上耐えられるようになったら終わり
@@ -216,57 +229,56 @@ class UNIT:
 
         # パターン毎にDPSを計算する 耐えられないなら0にする
         max_dps = 0
-        ret = None
+        ret = self.pattern[0]
         for pt in self.pattern:
             dps = self.dps_calc(pt, hiDamage, seedBREAK=0.315, monsterV=3)
             if dps > max_dps:
                 ret = pt
                 max_dps = dps
             # print("as: ",pt.assist,"  B: ", pt.unitB, "  rune: ",pt.rune , "  dps: ", dps , " HPS: ",pt.HPS)
-
         return ret
 
-    def HPcalc_and_safeLINE(self, line, seedBREAK, runeICHRYS, runeENHANCER, seedSOUL, monsterASS):
-        # lineを超えるような体力にあるか、ないならどうすればいいのかを検討する
-        # まずは防護力0.03、上位なし、ガッツなしで耐えられるのか確認
-        cuestHP = HPS(self.HP, self.GUTS, runeHIGH=0, unitB=0.03, runeRIFE=0)
-        if cuestHP > line:
-            # ラインを超えてる場合 防護力は0.03で確定 上位も使わない
-            self.ASSIST = 0.03
-            # ★5の場合
-            if self.LIM_RUNE-1 == 5:
-                self.runeDEPLOY = ["atk","guts","quick","zokusei","berse",""]
-                self.runeMVALUE = [33.00, 27.001, 33.00, 30.00, 33.00, None]
-                # ★5はアーチェを入れる余裕がある
-                if self.weapon == 4:
-                    self.runeDEPLOY[5] = "arche"
-                    self.runeMVALUE[5] = 30.00
-            # ★4の場合
-            elif self.LIM_RUNE-1 == 4:
-                self.runeDEPLOY = ["atk","guts","quick","zokusei","berse"]
-                self.runeMVALUE = [33.00, 27.001, 33.00, 30.00, 33.00]
-                # ★4はアーチェを入れるならGutsを抜く
-                if self.weapon == 4:
-                    self.runeDEPLOY[1] = "arche"
-                    self.runeMVALUE[1] = 30.00
-            # ★3の場合
-            elif self.LIM_RUNE-1 == 4:
-                # 属性をいれられて耐えるならそれでいい 優先度は属性 > arche > 有利2
-                self.runeDEPLOY = ["berse","atk","quick","zokusei"]
-                self.runeMVALUE = [33.00, 33.00, 33.00, 30.00]
-        else:
-            # 耐えない場合 どうすんのお前
-            # 優先度 ガッツ＞上位＞防護力＞他
-            pass
+    # def HPcalc_and_safeLINE(self, line, seedBREAK, runeICHRYS, runeENHANCER, seedSOUL, monsterASS):
+    #     # lineを超えるような体力にあるか、ないならどうすればいいのかを検討する
+    #     # まずは防護力0.03、上位なし、ガッツなしで耐えられるのか確認
+    #     cuestHP = HPS(self.HP, self.GUTS, runeHIGH=0, unitB=0.03, runeRIFE=0)
+    #     if cuestHP > line:
+    #         # ラインを超えてる場合 防護力は0.03で確定 上位も使わない
+    #         self.ASSIST = 0.03
+    #         # ★5の場合
+    #         if self.LIM_RUNE-1 == 5:
+    #             self.runeDEPLOY = ["atk","guts","quick","zokusei","berse",""]
+    #             self.runeMVALUE = [33.00, 27.001, 33.00, 30.00, 33.00, None]
+    #             # ★5はアーチェを入れる余裕がある
+    #             if self.weapon == 4:
+    #                 self.runeDEPLOY[5] = "arche"
+    #                 self.runeMVALUE[5] = 30.00
+    #         # ★4の場合
+    #         elif self.LIM_RUNE-1 == 4:
+    #             self.runeDEPLOY = ["atk","guts","quick","zokusei","berse"]
+    #             self.runeMVALUE = [33.00, 27.001, 33.00, 30.00, 33.00]
+    #             # ★4はアーチェを入れるならGutsを抜く
+    #             if self.weapon == 4:
+    #                 self.runeDEPLOY[1] = "arche"
+    #                 self.runeMVALUE[1] = 30.00
+    #         # ★3の場合
+    #         elif self.LIM_RUNE-1 == 4:
+    #             # 属性をいれられて耐えるならそれでいい 優先度は属性 > arche > 有利2
+    #             self.runeDEPLOY = ["berse","atk","quick","zokusei"]
+    #             self.runeMVALUE = [33.00, 33.00, 33.00, 30.00]
+    #     else:
+    #         # 耐えない場合 どうすんのお前
+    #         # 優先度 ガッツ＞上位＞防護力＞他
+    #         pass
 
-    def calcrate_assist(self, line,unit,rune,assist,seed,mons):
-        c_ATK = cuest_ATK(unit["atk"], unit["gtus"], rune["atk"], rune["high"], unit["assist"])
-        zokuseiHOSEI = cuest_HOSEI(unit["hosei"], assist["yuri"], unit["mind_omk"], rune["zokusei"], seed["break"], rune["ex"], rune["enha"])
-        damage = YATK(c_ATK, zokuseiHOSEI, seed["soul"], unit["special"])
-        cuest_HP = HPS(unit["hp"], unit["gtus"], rune["high"], unit["assist"], rune["rife"])
-        percentage = 1 - line / cuest_HP
-        reDPS = DPS(damage, unit["inter"], rune["quick"], unit["guts"], unit["assist"], mons, percentage, rune["berse"], rune["arche"])
-        return reDPS
+    # def calcrate_assist(self, line,unit,rune,assist,seed,mons):
+    #     c_ATK = cuest_ATK(unit["atk"], unit["gtus"], rune["atk"], rune["high"], unit["assist"])
+    #     zokuseiHOSEI = cuest_HOSEI(unit["hosei"], assist["yuri"], unit["mind_omk"], rune["zokusei"], seed["break"], rune["ex"], rune["enha"])
+    #     damage = YATK(c_ATK, zokuseiHOSEI, seed["soul"], unit["special"])
+    #     cuest_HP = HPS(unit["hp"], unit["gtus"], rune["high"], unit["assist"], rune["rife"])
+    #     percentage = 1 - line / cuest_HP
+    #     reDPS = DPS(damage, unit["inter"], rune["quick"], unit["guts"], unit["assist"], mons, percentage, rune["berse"], rune["arche"])
+    #     return reDPS
     
 
 
@@ -314,7 +326,7 @@ def tokkou(bukisyu, s0, s1, unitbuki):
 
 def main():
     # configを読む
-    with open('config.yaml', 'r' ,encoding="utf-8_sig") as yml:
+    with open('config/config.yaml', 'r' ,encoding="utf-8_sig") as yml:
         config = yaml.load(yml)
 
     # 所持状況表を読み取る
@@ -352,6 +364,7 @@ def main():
                     "omake":omake, 
                     "flagspecial":flagspecial, 
                     "rearity":rearity,
+                    "reach": int(unit["reach"]),
                     "can_zyoui":can_zyoui,
                     "name":unitNAME,
                     "weapon":unitWEAPON,
@@ -360,55 +373,85 @@ def main():
         unitdata = UNIT(argument)
         MYUNITS.append(unitdata)
     print(len(MYUNITS))
-    # サロ
-    debug_unit = MYUNITS[6]
-    # ロッシェ
-    debug_unit = MYUNITS[12]
-    # ナノン
-    debug_unit = MYUNITS[26]
-    # パユ
-    debug_unit = MYUNITS[47]
-    # カナカエイア
-    debug_unit = MYUNITS[62]
 
-    debug_unit = MYUNITS[1]
+    # # サロ
+    # debug_unit = MYUNITS[6]
+    # # ロッシェ
+    # debug_unit = MYUNITS[12]
+    # # ナノン
+    # debug_unit = MYUNITS[26]
+    # # パユ
+    # debug_unit = MYUNITS[47]
+    # # カナカエイア
+    # debug_unit = MYUNITS[62]
+    # ルジャS
+    # debug_unit_2 = MYUNITS[122]
 
+    # debug_unit = MYUNITS[1]
 
-    # ここから計算をはじめるフェーズ
-    print(debug_unit.name)
-    pt = debug_unit.Berserk_Adjustment(3000)
-    step = 100
-    x_line = []
-    y_dps = []
-    for x in range(500):
-        hidamage = step*x
-        pt = debug_unit.Berserk_Adjustment(hidamage)
-        if pt is None:
-            break
-        x_line.append(hidamage)
-        y_dps.append(pt.dps)
-        print("hid: ", hidamage, "as: ",pt.assist,"  B: ", pt.unitB, "  rune: ",pt.rune , "  dps: ", pt.dps , " HPS: ",pt.HPS)
-    plt.title(debug_unit.name, fontname="RocknRoll One")
-    plt.plot(x_line, y_dps)
-    plt.xlabel("被ダメージ", fontname="RocknRoll One")
-    plt.ylabel("DPS", fontname="RocknRoll One")
-    plt.legend()
-    plt.show()
+    # # ここから計算をはじめるフェーズ
+    # print(debug_unit.name)
+    # pt = debug_unit.Berserk_Adjustment(3000)
+    # step = 100
+    # x_line = []
+    # y_dps = []
+    # y_dps_2 = []
+    # for x in range(500):
+    #     hidamage = step*x
+    #     pt = debug_unit.Berserk_Adjustment(hidamage)
+    #     pt_2 = debug_unit_2.Berserk_Adjustment(hidamage)
+    #     if pt is None:
+    #         break
+    #     x_line.append(hidamage)
+    #     y_dps.append(pt.dps)
+    #     y_dps_2.append(pt_2.dps)
+    #     # print("hid: ", hidamage, "as: ",pt.assist,"  B: ", pt.unitB, "  rune: ",pt.rune , "  dps: ", pt.dps , " HPS: ",pt.HPS)
+    # # plt.title(debug_unit.name, fontname="RocknRoll One")
+    # plt.plot(x_line, y_dps)
+    # plt.plot(x_line, y_dps_2)
+    # plt.legend(["ナジュム","ルジャS"], prop={"family":"RocknRoll One"})
+    # plt.xlabel("耐久指数", fontname="RocknRoll One")
+    # plt.ylabel("DPS", fontname="RocknRoll One")
+    # # plt.legend()
+    # plt.show()
 
-
+    # return
 
     # 最低ラインから+100くらいで計算、付けられるルーン、DPSを考慮した
-    min_line = 4000
-    step = 100
-    max_line = 12000
-    now_line = min_line
+    min_line = 20000
+    step = 1000
+    max_line = 40000
 
-    # m = int((max_line-min_line)/step)
-    # for x in range(m):
-    #     line = min_line + step * x
-    #     # ラインでベルセを含めたDPSを計算
-
-
+    m = int((max_line-min_line)/step)
+    store_data = []
+    for x in tqdm(range(m)):
+        now_line = min_line + step * x
+        hd_data = {"hidame":now_line, "unit_datas":[] }
+        
+        # ラインでベルセを含めたDPSを計算
+        for unit in MYUNITS:
+            # パターンが帰る
+            pt = unit.Berserk_Adjustment(now_line)
+            # 保持したいのは
+            # ユニット判断のためにレアリティ、武器種、名前
+            # 総DPS、ルーン、アシスト
+            unitDICT = {"rearity": unit.REARITY,
+                        "weapon": unit.weapon,
+                        "name": unit.name,
+                        "dps": pt.dps,
+                        "rune": pt.rune,
+                        "assist": pt.assist,
+                        "unitB": pt.unitB, 
+                        "riferune": pt.rife_M,
+                        "guardrune": pt.guard_M,
+                        "HPS": pt.HPS,
+                        "rear guard": unit.can_zyoui,
+                        "reach":unit.reach ,
+            }
+            hd_data["unit_datas"].append(unitDICT)
+        store_data.append(hd_data)
+    store_data = np.array(store_data)
+    np.save(config["unit_syozi"]["simulation_data"], store_data)
 
     # 4部位水打銃有利
     # 5部位風斬魔有利

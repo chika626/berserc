@@ -2,8 +2,7 @@ import sys
 import yaml
 import json
 import openpyxl
-from openpyxl.styles import Border, Side
-from openpyxl.styles import Font
+from openpyxl.styles import Border, Side, Font
 
 def create_xlsx(xlsxname):
     # ファイルは1つでいい
@@ -38,7 +37,7 @@ def write_xlsx(ri, sheet, reach, moji, bukisyu, reach_C, buki_colors, borders, f
 
 
 def main():
-    with open('config.yaml', 'r',encoding="utf-8_sig") as yml:
+    with open('config/config.yaml', 'r',encoding="utf-8_sig") as yml:
         config = yaml.safe_load(yml)
 
     json_name = config["korin"]["unit_zokusei"]

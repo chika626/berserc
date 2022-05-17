@@ -1,0 +1,18 @@
+# 毎回変えるところはここになるのかな
+korin:
+  # モンスターの属性
+  monster_zokusei: "clight"
+  # 参照するjson ユニットの属性表に書き込んだやつを使う
+  unit_zokusei: "yugarabo_json/yami"
+  # 特攻の武器種
+  s0: "打撃"
+  s1: "弓矢"
+  # モンスター部位数
+  monster_V: 3
+
+# 所持表の名前を変えるならここ
+# 所持状況書き込み後もここを参照するのでseet_splitterを複数回呼ぶのはやめたほうがいい
+unit_syozi:
+  xlsxname: "所持確認表/20220319_降臨2日目_所持確認表"
+  simulation_data: "npz/20220319_降臨2日目_data"
+  pickup: 26

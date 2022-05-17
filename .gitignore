@@ -1,0 +1,6 @@
+build/*
+debug_script/*
+dist/*
+npz/*
+yugarabo_json/*
+所持確認表/*
