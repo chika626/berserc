@@ -22,7 +22,7 @@ def write_xlsx(ri, sheet, best_unit, bukisyu, reach_C, buki_colors, borders, fon
         sheet.cell(row=ri, column=6, value=unit["name"]).font = font
         sheet.cell(row=ri, column=7, value=', '.join(unit["rune"])).font = font
         sheet.cell(row=ri, column=8, value=', '.join(unit["assist"])).font = font
-        sheet.cell(row=ri, column=9, value=str(unit["unitB"]*100)+'%').font = font
+        sheet.cell(row=ri, column=9, value=str(round(unit["unitB"]*10000)/100.0)+'%').font = font
         sheet.cell(row=ri, column=10, value=unit["HPS"]).font = font
         sheet.cell(row=ri, column=11, value=unit["dps"]).font = font
         if "knight" in unit.keys():
@@ -54,7 +54,7 @@ def get_highdpsmaster(fulldata, config):
     knight = 0.15001
     knight_step = 0.005
     m = 37
-    # 取るのは上から24人
+    # 取るのは上からx人
     pickup_unit = int(config["unit_syozi"]["pickup"])
     hd_x_unitdata = {}
     for data in fulldata:
