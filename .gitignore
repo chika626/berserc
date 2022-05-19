@@ -6,3 +6,4 @@ yugarabo_json/*
 所持確認表/*
 *.pyc
 *.spec
+*.xlsx
